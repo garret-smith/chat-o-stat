@@ -21,8 +21,9 @@ else:
     raw_input = input
 
 class ThermoBot(sleekxmpp.ClientXMPP):
-    def __init__(self, jid, password):
+    def __init__(self, jid, password, thermostat):
         sleekxmpp.ClientXMPP.__init__(self, jid, password)
+        self.thermostat = thermostat
         self.add_event_handler("session_start", self.start)
         self.add_event_handler("message", self.message)
 
@@ -34,7 +35,10 @@ class ThermoBot(sleekxmpp.ClientXMPP):
     def message(self, msg):
         logging.info("received message %s", msg)
         if msg['type'] in ('chat', 'normal'):
-            msg.reply("Thanks for sending\n%(body)s" % msg).send()
+            if msg['body'] == "?":
+                msg.reply("Current temp is %fF" % self.thermostat.getTemp()).send()
+            else:
+                msg.reply("Thanks for sending\n%(body)s" % msg).send()
 
 Mode = Enum('Mode', 'On Off Thermostat')
 
@@ -169,6 +173,7 @@ QPushButton:checked {
         self.setLayout(layout)
 
         self.currentTempDisplay = currentTempDisplay
+        self.setTempDisplay = setTempDisplay
         self.onBtn = onBtn
         self.offBtn = offBtn
         self.thermostatBtn = thermostatBtn
@@ -176,12 +181,12 @@ QPushButton:checked {
         self.showFullScreen()
 
     def hotterClicked(self):
-        self.thermostat.setTemp(min(self.thermostat.getTemp() + 1, 85.0))
-        self.currentTempDisplay.display(self.thermostat.getTemp())
+        self.thermostat.setSetTemp(min(self.thermostat.getSetTemp() + 1, 85.0))
+        self.setTempDisplay.display(self.thermostat.getSetTemp())
 
     def colderClicked(self):
-        self.thermostat.setTemp(max(self.thermostat.getTemp() - 1, 40.0))
-        self.currentTempDisplay.display(self.thermostat.getTemp())
+        self.thermostat.setSetTemp(max(self.thermostat.getSetTemp() - 1, 40.0))
+        self.setTempDisplay.display(self.thermostat.getSetTemp())
 
     def onClicked(self):
         self.thermostat.setMode(Mode.On)
@@ -216,7 +221,7 @@ def main():
     tPollerThread = TempPollerThread(sensor, thermostat)
     tPollerThread.start()
 
-    chatbot = ThermoBot(access_codes.jid, access_codes.password)
+    chatbot = ThermoBot(access_codes.jid, access_codes.password, thermostat)
     chatbot.register_plugin('xep_0030') # Service Discovery
     chatbot.register_plugin('xep_0004') # Data Forms
     chatbot.register_plugin('xep_0060') # PubSub
