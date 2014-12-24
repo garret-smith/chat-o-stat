@@ -7,7 +7,8 @@ import threading
 import time
 
 from enum import Enum
-from PyQt4 import QtGui
+from PyQt4.QtGui import *
+from PyQt4.QtCore import *
 from subprocess import check_output
 
 import Adafruit_BMP.BMP085 as BMP085
@@ -55,8 +56,14 @@ class Thermostat():
         self._setTemp = float(setTemp)
         self._mode = Mode.Off
         self._heating = False
+        self._toNotify = []
+
+    def notify(self, dest):
+        self._toNotify.append(dest)
 
     def setMode(self, newMode):
+        if self._mode == newMode:
+            return
         with self._stateLock:
             self._mode = newMode
             if self._mode == Mode.On:
@@ -65,16 +72,35 @@ class Thermostat():
                 self.turnOff()
             elif self._mode == Mode.Thermostat:
                 self.checkAction()
+            self.onMode()
 
     def setSetTemp(self, setTemp):
+        if self._setTemp == setTemp:
+            return
         with self._stateLock:
             self._setTemp = setTemp
             self.checkAction()
+            self.onSetTemp()
 
     def setTemp(self, temp):
+        if self._temp == temp:
+            return
         with self._stateLock:
             self._temp = float(temp)
             self.checkAction()
+        self.onTemp()
+
+    def onMode(self):
+        for n in self._toNotify:
+            n.onMode(self._mode)
+
+    def onSetTemp(self):
+        for n in self._toNotify:
+            n.onSetTemp(self._setTemp)
+
+    def onTemp(self):
+        for n in self._toNotify:
+            n.onTemp(self._temp)
 
     def getMode(self):
         return self._mode
@@ -104,46 +130,76 @@ class Thermostat():
             self._heating = False
             logging.info("Turning heat OFF")
 
-class ThermostatGui(QtGui.QWidget):
+class ThermostatGui(QWidget):
     def __init__(self, thermostat):
         super(ThermostatGui, self).__init__()
         self.thermostat = thermostat
         self.initUI()
+        thermostat.notify(self)
 
     def initUI(self):
-        self.setStyleSheet("""color: white;
-background-color: black;
-border-style: outset;
-border-color: grey;
-border-width: 5px;
-border-radius: 10px;
-font: bold 16px;
+        self.setStyleSheet("""
+QWidget {
+  color: white;
+  background-color: black;
+  padding: 8px;
+}
+
+QPushButton {
+  border-style: outset;
+  border-color: grey;
+  border-width: 1px;
+  border-radius: 10px;
+  font: 14pt;
+}
 """)
         btnStyleSheet = """
 QPushButton:checked {
   background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #dadbde, stop: 1 #f6f7fa);
   color: black
 }"""
-        currentTempDisplay = QtGui.QLCDNumber(self)
-        currentTempDisplay.display(self.thermostat.getTemp())
+        movie = QMovie("giphy.gif", QByteArray(), self)
+        movieScreen = QLabel()
+        movieScreen.move(0, 0)
+        movieScreen.setFixedWidth(320)
+        movieScreen.setFixedHeight(200)
 
-        setTempDisplay = QtGui.QLCDNumber(self)
-        setTempDisplay.display(self.thermostat.getSetTemp())
+        currentTempDisplay = QLabel(self)
+        currentTempDisplay.setStyleSheet("""
+QLabel {
+border: -20px;
+padding: -20px;
+margin: -20px;
+font: bold 36pt;
+}""")
+        currentTempDisplay.setAlignment(Qt.AlignCenter|Qt.AlignHCenter)
+        currentTempDisplay.setText("%.1f" % self.thermostat.getTemp())
 
-        hotterBtn = QtGui.QPushButton('Hotter', self)
-        colderBtn = QtGui.QPushButton('Colder', self)
+        setTempDisplay = QLabel(self)
+        setTempDisplay.setStyleSheet("""
+QLabel {
+border: -20px;
+padding: -20px;
+margin: -20px;
+font: bold 22pt;
+}""")
+        setTempDisplay.setAlignment(Qt.AlignCenter|Qt.AlignHCenter)
+        setTempDisplay.setText("%d" % self.thermostat.getSetTemp())
 
-        onBtn = QtGui.QPushButton('On', self)
+        hotterBtn = QPushButton('Hotter', self)
+        colderBtn = QPushButton('Colder', self)
+
+        onBtn = QPushButton('On', self)
         onBtn.setCheckable(True)
         onBtn.setStyleSheet(btnStyleSheet)
-        offBtn = QtGui.QPushButton('Off', self)
+        offBtn = QPushButton('Off', self)
         offBtn.setCheckable(True)
         offBtn.setStyleSheet(btnStyleSheet)
-        thermostatBtn = QtGui.QPushButton('Thermostat', self)
+        thermostatBtn = QPushButton('Thermostat', self)
         thermostatBtn.setCheckable(True)
         thermostatBtn.setStyleSheet(btnStyleSheet)
 
-        modeGroup = QtGui.QButtonGroup(self)
+        modeGroup = QButtonGroup(self)
         modeGroup.addButton(onBtn)
         modeGroup.addButton(offBtn)
         modeGroup.addButton(thermostatBtn)
@@ -155,12 +211,12 @@ QPushButton:checked {
         thermostatBtn.clicked.connect(self.thermostatClicked)
 
         ip = check_output(["hostname", "-I"])
-        ipLabel = QtGui.QLabel(ip, self)
+        ipLabel = QLabel(ip, self)
         ipLabel.setStyleSheet("border-width: 0; border-radius: 0; font: 12px")
         ipLabel.move(0, 0)
         ipLabel.setFixedWidth(320)
 
-        layout = QtGui.QGridLayout()
+        layout = QGridLayout()
 
         layout.addWidget(currentTempDisplay, 0, 0, 2, 3)
         layout.addWidget(setTempDisplay, 0, 3, 2, 2)
@@ -178,15 +234,29 @@ QPushButton:checked {
         self.offBtn = offBtn
         self.thermostatBtn = thermostatBtn
 
+        movie.setCacheMode(QMovie.CacheAll)
+        movie.setSpeed(100)
+        movieScreen.setMovie(movie)
+        movie.start()
+
         self.showFullScreen()
+
+    def onMode(self, mode):
+        return
+
+    def onSetTemp(self, setTemp):
+        self.setTempDisplay.setText("%d" % setTemp)
+
+    def onTemp(self, temp):
+        self.currentTempDisplay.setText("%.1f" % temp)
 
     def hotterClicked(self):
         self.thermostat.setSetTemp(min(self.thermostat.getSetTemp() + 1, 85.0))
-        self.setTempDisplay.display(self.thermostat.getSetTemp())
+        self.setTempDisplay.setText("%d" % self.thermostat.getSetTemp())
 
     def colderClicked(self):
         self.thermostat.setSetTemp(max(self.thermostat.getSetTemp() - 1, 40.0))
-        self.setTempDisplay.display(self.thermostat.getSetTemp())
+        self.setTempDisplay.setText("%d" % self.thermostat.getSetTemp())
 
     def onClicked(self):
         self.thermostat.setMode(Mode.On)
@@ -209,7 +279,7 @@ class TempPollerThread(threading.Thread):
             tF = tC * (9.0/5.0) + 32.0
             logging.info("tC: %f, tF: %f", tC, tF)
             self._thermostat.setTemp(tF)
-            time.sleep(5)
+            time.sleep(1)
     
 def main():
     logging.basicConfig(filename='log.txt', level=logging.DEBUG)
@@ -233,7 +303,7 @@ def main():
         logging.warning("login to talk.google.com failed")
         sys.exit(0)
 
-    app = QtGui.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     theromstatUi = ThermostatGui(thermostat)
 
     sys.exit(app.exec_())
