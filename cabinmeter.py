@@ -35,9 +35,10 @@ class ThermoBot(sleekxmpp.ClientXMPP):
 
     def message(self, msg):
         logging.info("received message %s", msg)
+        logging.info("roster: %s", self.client_roster)
         if msg['type'] in ('chat', 'normal'):
             if msg['body'] == "?":
-                msg.reply("Current temp is %fF" % self.thermostat.getTemp()).send()
+                msg.reply("Hi %s, current temp is %.2fF" % (msg['from'], self.thermostat.getTemp())).send()
             else:
                 msg.reply("Thanks for sending\n%(body)s" % msg).send()
 
@@ -140,29 +141,35 @@ class ThermostatGui(QWidget):
     def initUI(self):
         self.setStyleSheet("""
 QWidget {
+  background-color: transparent;
   color: white;
-  background-color: black;
-  padding: 8px;
-}
-
-QPushButton {
-  border-style: outset;
-  border-color: grey;
-  border-width: 1px;
-  border-radius: 10px;
-  font: 14pt;
+  margin: 0px;
 }
 """)
         btnStyleSheet = """
+QPushButton {
+  background-color: black;
+  color: white;
+  border-style: outset;
+  border-color: grey;
+  border-width: 2px;
+  border-radius: 10px;
+  padding: 5px;
+  font: bold 14pt;
+}
 QPushButton:checked {
-  background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #dadbde, stop: 1 #f6f7fa);
-  color: black
-}"""
-        movie = QMovie("giphy.gif", QByteArray(), self)
-        movieScreen = QLabel()
+  background-color: grey;
+  color: black;
+}
+"""
+        movie = QMovie("fire.gif", QByteArray(), self)
+        movieScreen = QLabel(self)
         movieScreen.move(0, 0)
         movieScreen.setFixedWidth(320)
-        movieScreen.setFixedHeight(200)
+        movieScreen.setFixedHeight(240)
+        movieScreen.setMovie(movie)
+        movie.setCacheMode(QMovie.CacheAll)
+        movie.setSpeed(30)
 
         currentTempDisplay = QLabel(self)
         currentTempDisplay.setStyleSheet("""
@@ -186,8 +193,16 @@ font: bold 22pt;
         setTempDisplay.setAlignment(Qt.AlignCenter|Qt.AlignHCenter)
         setTempDisplay.setText("%d" % self.thermostat.getSetTemp())
 
-        hotterBtn = QPushButton('Hotter', self)
-        colderBtn = QPushButton('Colder', self)
+        hotIcon = QIcon("up.png")
+        coldIcon = QIcon("down.png")
+
+        hotterBtn = QPushButton('', self)
+        hotterBtn.setIcon(hotIcon)
+        hotterBtn.setIconSize(QSize(60,30))
+
+        colderBtn = QPushButton('', self)
+        colderBtn.setIcon(coldIcon)
+        colderBtn.setIconSize(QSize(60,30))
 
         onBtn = QPushButton('On', self)
         onBtn.setCheckable(True)
@@ -195,6 +210,7 @@ font: bold 22pt;
         offBtn = QPushButton('Off', self)
         offBtn.setCheckable(True)
         offBtn.setStyleSheet(btnStyleSheet)
+        offBtn.setChecked(True)
         thermostatBtn = QPushButton('Thermostat', self)
         thermostatBtn.setCheckable(True)
         thermostatBtn.setStyleSheet(btnStyleSheet)
@@ -217,6 +233,7 @@ font: bold 22pt;
         ipLabel.setFixedWidth(320)
 
         layout = QGridLayout()
+        layout.setMargin(0)
 
         layout.addWidget(currentTempDisplay, 0, 0, 2, 3)
         layout.addWidget(setTempDisplay, 0, 3, 2, 2)
@@ -228,21 +245,22 @@ font: bold 22pt;
 
         self.setLayout(layout)
 
+        self.movie = movie
         self.currentTempDisplay = currentTempDisplay
         self.setTempDisplay = setTempDisplay
         self.onBtn = onBtn
         self.offBtn = offBtn
         self.thermostatBtn = thermostatBtn
 
-        movie.setCacheMode(QMovie.CacheAll)
-        movie.setSpeed(100)
-        movieScreen.setMovie(movie)
-        movie.start()
-
         self.showFullScreen()
 
     def onMode(self, mode):
-        return
+        if mode == Mode.On:
+            self.movie.start()
+        elif mode == Mode.Off:
+            self.movie.stop()
+        elif mode == Mode.Thermostat:
+            self.movie.start()
 
     def onSetTemp(self, setTemp):
         self.setTempDisplay.setText("%d" % setTemp)
@@ -280,7 +298,7 @@ class TempPollerThread(threading.Thread):
             logging.info("tC: %f, tF: %f", tC, tF)
             self._thermostat.setTemp(tF)
             time.sleep(1)
-    
+
 def main():
     logging.basicConfig(filename='log.txt', level=logging.DEBUG)
     logging.info("cabinmeter starting")
