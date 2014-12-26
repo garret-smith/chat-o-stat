@@ -37,10 +37,35 @@ class ThermoBot(sleekxmpp.ClientXMPP):
         logging.info("received message %s", msg)
         logging.info("roster: %s", self.client_roster)
         if msg['type'] in ('chat', 'normal'):
-            if msg['body'] == "?":
-                msg.reply("Hi %s, current temp is %.2fF" % (msg['from'], self.thermostat.getTemp())).send()
+            if msg['from'].user in access_codes.xmpp_auth_accounts:
+                setTemp = self.thermostat.getSetTemp()
+                temp = self.thermostat.getTemp()
+                mode = self.thermostat.getMode()
+                body = msg['body']
+                if body == "?":
+                    if mode == Mode.On:
+                        msg.reply("Heat is ON.  Current temp is %.1f" % temp).send()
+                    elif mode == Mode.Off:
+                        msg.reply("Heat is OFF.  Current temp is %.1f" % temp).send()
+                    elif mode == Mode.Thermostat:
+                        msg.reply("Thermostat is set to %.0f.  Current temp is %.1f" % (setTemp, temp)).send()
+                    else:
+                        msg.reply("I know you're smarter than this").send()
+                elif body == 'on':
+                    self.thermostat.setMode(Mode.On)
+                    msg.reply("Fireplace is ON.  Current temp is %.1f" % temp).send()
+                elif body == 'off':
+                    self.thermostat.setMode(Mode.Off)
+                    msg.reply("Heat is OFF.  Current temp is %.1f" % temp).send()
+                elif body.startswith('set '):
+                    newSetTemp = float(int(body[4:]))
+                    self.thermostat.setSetTemp(newSetTemp)
+                    self.thermostat.setMode(Mode.Thermostat)
+                    msg.reply("Thermostat is set to %.0f.  Current temp is %.1f" % (newSetTemp, temp)).send()
+                else:
+                    msg.reply("I know you're smarter than this").send()
             else:
-                msg.reply("Thanks for sending\n%(body)s" % msg).send()
+                    msg.reply("Come again?" % msg['from'].user).send()
 
 Mode = Enum('Mode', 'On Off Thermostat')
 
@@ -257,10 +282,13 @@ font: bold 22pt;
     def onMode(self, mode):
         if mode == Mode.On:
             self.movie.start()
+            self.onBtn.setChecked(True)
         elif mode == Mode.Off:
             self.movie.stop()
+            self.offBtn.setChecked(True)
         elif mode == Mode.Thermostat:
             self.movie.start()
+            self.thermostatBtn.setChecked(True)
 
     def onSetTemp(self, setTemp):
         self.setTempDisplay.setText("%d" % setTemp)
