@@ -9,7 +9,7 @@ import time
 from enum import Enum
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
-from subprocess import check_output
+from subprocess import check_output,call
 
 import Adafruit_BMP.BMP085 as BMP085
 
@@ -162,12 +162,14 @@ class Thermostat():
     def turnOn(self):
         if not self._heating:
             self._heating = True
+            call(["gpio", "mode", "7", "out"])
             logging.info("Turning heat ON")
             self.onHeating()
 
     def turnOff(self):
         if self._heating:
             self._heating = False
+            call(["gpio", "mode", "7", "in"])
             logging.info("Turning heat OFF")
             self.onHeating()
 
@@ -357,11 +359,9 @@ class TempPollerThread(threading.Thread):
             time.sleep(1)
 
 def main():
-    logging.basicConfig(filename='log.txt', level=logging.DEBUG)
-    logging.info("cabinmeter starting")
-
+    # logging.basicConfig(filename='log.txt', level=logging.ERROR)
     sensor = BMP085.BMP085()
-    thermostat = Thermostat(72.0, 78.0)
+    thermostat = Thermostat(72.0, 70.0)
 
     tPollerThread = TempPollerThread(sensor, thermostat)
     tPollerThread.start()
