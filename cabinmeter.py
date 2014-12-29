@@ -15,6 +15,9 @@ import Adafruit_BMP.BMP085 as BMP085
 
 import access_codes
 
+maxT = 85.0
+minT = 55.0
+
 if sys.version_info < (3, 0):
     reload(sys)
     sys.setdefaultencoding('utf8')
@@ -34,14 +37,12 @@ class ThermoBot(sleekxmpp.ClientXMPP):
         self.get_roster()
 
     def message(self, msg):
-        logging.info("received message %s", msg)
-        logging.info("roster: %s", self.client_roster)
         if msg['type'] in ('chat', 'normal'):
             if msg['from'].user in access_codes.xmpp_auth_accounts:
                 setTemp = self.thermostat.getSetTemp()
                 temp = self.thermostat.getTemp()
                 mode = self.thermostat.getMode()
-                body = msg['body']
+                body = msg['body'].lower()
                 if body == "?":
                     if mode == Mode.On:
                         msg.reply("Heat is ON.  Current temp is %.1f" % temp).send()
@@ -58,20 +59,28 @@ class ThermoBot(sleekxmpp.ClientXMPP):
                     self.thermostat.setMode(Mode.Off)
                     msg.reply("Heat is OFF.  Current temp is %.1f" % temp).send()
                 elif body.startswith('set '):
-                    newSetTemp = float(int(body[4:]))
-                    self.thermostat.setSetTemp(newSetTemp)
-                    self.thermostat.setMode(Mode.Thermostat)
-                    msg.reply("Thermostat is set to %.0f.  Current temp is %.1f" % (newSetTemp, temp)).send()
+                    try:
+                        newSetTemp = float(body[4:])
+                        if newSetTemp < minT:
+                            msg.reply("%.0f seems awful cold" % newSetTemp).send()
+                        elif newSetTemp > maxT:
+                            msg.reply("%.0f seems awful hot" % newSetTemp).send()
+                        else:
+                            self.thermostat.setSetTemp(newSetTemp)
+                            self.thermostat.setMode(Mode.Thermostat)
+                            msg.reply("Thermostat is set to %.0f.  Current temp is %.1f" % (newSetTemp, temp)).send()
+                    except Exception as e:
+                        msg.reply("I can't set the thermostat to '%s'" % body[4:]).send()
                 else:
-                    msg.reply("I know you're smarter than this").send()
+                    msg.reply("I don't know what '%s' means." % body).send()
             else:
-                    msg.reply("Come again?" % msg['from'].user).send()
+                    msg.reply("Not sure I can trust you, %s." % msg['from'].user).send()
 
 Mode = Enum('Mode', 'On Off Thermostat')
 
 class Thermostat():
     def __init__(self, temp, setTemp):
-        self._hysteresis = 1.0
+        self._hysteresis = 0.5
         self._stateLock = threading.Lock()
 
         # each of these need to be observable variables
@@ -128,6 +137,10 @@ class Thermostat():
         for n in self._toNotify:
             n.onTemp(self._temp)
 
+    def onHeating(self):
+        for n in self._toNotify:
+            n.onHeating(self._heating)
+
     def getMode(self):
         return self._mode
 
@@ -150,11 +163,13 @@ class Thermostat():
         if not self._heating:
             self._heating = True
             logging.info("Turning heat ON")
+            self.onHeating()
 
     def turnOff(self):
         if self._heating:
             self._heating = False
             logging.info("Turning heat OFF")
+            self.onHeating()
 
 class ThermostatGui(QWidget):
     def __init__(self, thermostat):
@@ -187,22 +202,30 @@ QPushButton:checked {
   color: black;
 }
 """
-        movie = QMovie("fire.gif", QByteArray(), self)
+        firemovie = QMovie("fire.gif", QByteArray(), self)
+        firemovie.setCacheMode(QMovie.CacheAll)
+        firemovie.setSpeed(40)
+        firemovie.start()
+
+        bluefiremovie = QMovie("bluefire.gif", QByteArray(), self)
+        bluefiremovie.setCacheMode(QMovie.CacheAll)
+        bluefiremovie.setSpeed(40)
+        bluefiremovie.start()
+
         movieScreen = QLabel(self)
         movieScreen.move(0, 0)
         movieScreen.setFixedWidth(320)
         movieScreen.setFixedHeight(240)
-        movieScreen.setMovie(movie)
-        movie.setCacheMode(QMovie.CacheAll)
-        movie.setSpeed(30)
+        movieScreen.setMovie(bluefiremovie)
 
         currentTempDisplay = QLabel(self)
         currentTempDisplay.setStyleSheet("""
 QLabel {
 border: -20px;
 padding: -20px;
+padding-right: -40px;
 margin: -20px;
-font: bold 36pt;
+font: bold 48pt;
 }""")
         currentTempDisplay.setAlignment(Qt.AlignCenter|Qt.AlignHCenter)
         currentTempDisplay.setText("%.1f" % self.thermostat.getTemp())
@@ -212,6 +235,7 @@ font: bold 36pt;
 QLabel {
 border: -20px;
 padding: -20px;
+padding-right: -40px;
 margin: -20px;
 font: bold 22pt;
 }""")
@@ -257,11 +281,11 @@ font: bold 22pt;
         ipLabel.move(0, 0)
         ipLabel.setFixedWidth(320)
 
-        layout = QGridLayout()
+        layout = QGridLayout(self)
         layout.setMargin(0)
 
-        layout.addWidget(currentTempDisplay, 0, 0, 2, 3)
-        layout.addWidget(setTempDisplay, 0, 3, 2, 2)
+        layout.addWidget(currentTempDisplay, 0, 0, 2, 4)
+        layout.addWidget(setTempDisplay, 0, 4, 2, 1)
         layout.addWidget(hotterBtn, 0, 5, 1, 1)
         layout.addWidget(colderBtn, 1, 5, 1, 1)
         layout.addWidget(onBtn, 2, 0, 1, 2)
@@ -270,7 +294,9 @@ font: bold 22pt;
 
         self.setLayout(layout)
 
-        self.movie = movie
+        self.bluefiremovie = bluefiremovie
+        self.firemovie = firemovie
+        self.movieScreen = movieScreen
         self.currentTempDisplay = currentTempDisplay
         self.setTempDisplay = setTempDisplay
         self.onBtn = onBtn
@@ -281,13 +307,10 @@ font: bold 22pt;
 
     def onMode(self, mode):
         if mode == Mode.On:
-            self.movie.start()
             self.onBtn.setChecked(True)
         elif mode == Mode.Off:
-            self.movie.stop()
             self.offBtn.setChecked(True)
         elif mode == Mode.Thermostat:
-            self.movie.start()
             self.thermostatBtn.setChecked(True)
 
     def onSetTemp(self, setTemp):
@@ -296,12 +319,18 @@ font: bold 22pt;
     def onTemp(self, temp):
         self.currentTempDisplay.setText("%.1f" % temp)
 
+    def onHeating(self, heating):
+        if heating:
+            self.movieScreen.setMovie(self.firemovie)
+        else:
+            self.movieScreen.setMovie(self.bluefiremovie)
+
     def hotterClicked(self):
-        self.thermostat.setSetTemp(min(self.thermostat.getSetTemp() + 1, 85.0))
+        self.thermostat.setSetTemp(min(self.thermostat.getSetTemp() + 1, maxT))
         self.setTempDisplay.setText("%d" % self.thermostat.getSetTemp())
 
     def colderClicked(self):
-        self.thermostat.setSetTemp(max(self.thermostat.getSetTemp() - 1, 40.0))
+        self.thermostat.setSetTemp(max(self.thermostat.getSetTemp() - 1, minT))
         self.setTempDisplay.setText("%d" % self.thermostat.getSetTemp())
 
     def onClicked(self):
