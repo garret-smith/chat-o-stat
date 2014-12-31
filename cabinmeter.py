@@ -1,6 +1,7 @@
 # vim: et:sw=4:ts=4
 
 import logging
+import logging.config
 import sleekxmpp
 import sys
 import threading
@@ -15,8 +16,8 @@ import Adafruit_BMP.BMP085 as BMP085
 
 import access_codes
 
-maxT = 85.0
-minT = 55.0
+maxT = 80.0
+minT = 45.0
 
 if sys.version_info < (3, 0):
     reload(sys)
@@ -89,7 +90,7 @@ class Thermostat():
         # notification when they do
         self._temp = float(temp)
         self._setTemp = float(setTemp)
-        self._mode = Mode.Off
+        self._mode = Mode.Thermostat
         self._heating = False
         self._toNotify = []
 
@@ -261,10 +262,10 @@ font: bold 22pt;
         offBtn = QPushButton('Off', self)
         offBtn.setCheckable(True)
         offBtn.setStyleSheet(btnStyleSheet)
-        offBtn.setChecked(True)
         thermostatBtn = QPushButton('Thermostat', self)
         thermostatBtn.setCheckable(True)
         thermostatBtn.setStyleSheet(btnStyleSheet)
+        thermostatBtn.setChecked(True)
 
         modeGroup = QButtonGroup(self)
         modeGroup.addButton(onBtn)
@@ -354,14 +355,19 @@ class TempPollerThread(threading.Thread):
         while True:
             tC = self._sensor.read_temperature()
             tF = tC * (9.0/5.0) + 32.0
-            logging.info("tC: %f, tF: %f", tC, tF)
             self._thermostat.setTemp(tF)
             time.sleep(1)
 
 def main():
-    # logging.basicConfig(filename='log.txt', level=logging.ERROR)
+    logging.config.fileConfig('log.conf',disable_existing_loggers=0)
+    logging.getLogger('Adafruit_I2C').setLevel(logging.WARN)
+    logging.getLogger('Adafruit_BMP').setLevel(logging.WARN)
+
+    # init the GPIO
+    call(["gpio", "mode", "7", "in"])
+
     sensor = BMP085.BMP085()
-    thermostat = Thermostat(72.0, 70.0)
+    thermostat = Thermostat(72.0, 50.0)
 
     tPollerThread = TempPollerThread(sensor, thermostat)
     tPollerThread.start()
@@ -370,7 +376,7 @@ def main():
     chatbot.register_plugin('xep_0030') # Service Discovery
     chatbot.register_plugin('xep_0004') # Data Forms
     chatbot.register_plugin('xep_0060') # PubSub
-    chatbot.register_plugin('xep_0199') # XMPP Ping
+    chatbot.register_plugin('xep_0199', {'keepalive': True, 'interval': 60, 'timeout': 15}) # XMPP Ping
     if chatbot.connect(('talk.google.com', 5222)):
         logging.info("logged in to talk.google.com")
         chatbot.process(block=False)
