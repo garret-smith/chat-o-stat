@@ -9,7 +9,7 @@ Runs on a [Raspberry P Model B+](http://www.adafruit.com/product/1914) with a
 A [BMP180](http://www.adafruit.com/products/1603) sensor is connected to
 the I2C port for measuring temperature.
 
-A relay is connected to GPIO 1.
+A relay is connected to GPIO 7.
 
 A USB WiFi module for connecting to the internet.
 
