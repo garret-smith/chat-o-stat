@@ -5,8 +5,8 @@ of a milli-volt heater.
 Thermostat set-point can be adjusted from the touchscreen or by chatting with
 the thermostat over Google Talk.
 
-Nice animated flames show when the heat is on.  Low ![blue flames](bluefire.gif)
-for the pilot light, large ![orange-red flames](fire.gif) when the heat is on.
+Nice animated flames show when the heat is on.  Low [blue flames](bluefire.gif)
+for the pilot light, large [orange-red flames](fire.gif) when the heat is on.
 
 ## Hardware
 Runs on a [Raspberry P Model B+](http://www.adafruit.com/product/1914) with a
