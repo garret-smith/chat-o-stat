@@ -6,6 +6,7 @@ import sleekxmpp
 import sys
 import threading
 import time
+import traceback
 
 from enum import Enum
 from PyQt4.QtGui import *
@@ -24,6 +25,51 @@ if sys.version_info < (3, 0):
     sys.setdefaultencoding('utf8')
 else:
     raw_input = input
+
+def safe_checkoutput(args):
+    try:
+        return check_output(args)
+    except CalledProcessError:
+        return ""
+
+class DebugBot(sleekxmpp.ClientXMPP):
+    def __init__(self, jid, password, thermostat):
+        sleekxmpp.ClientXMPP.__init__(self, jid, password)
+        self.thermostat = thermostat
+        self.add_event_handler("session_start", self.start)
+        self.add_event_handler("message", self.message)
+
+    def start(self, event):
+        logging.info("chat bot got start event")
+        self.send_presence()
+        self.get_roster()
+
+    def message(self, msg):
+        if msg['type'] in ('chat', 'normal'):
+            if msg['from'].user in access_codes.xmpp_auth_accounts:
+                mode = self.thermostat.getMode()
+                body = msg['body'].lower()
+                if body == "?":
+                    msg.reply("[Sensor disconnected] Mode is %s" % mode.name).send()
+                if body == "uptime":
+                    msg.reply("[Sensor disconnected] %s" % safe_checkoutput(["uptime"])).send()
+                if body == "log":
+                    msg.reply("[Sensor disconnected] %s" % safe_checkoutput(["cat", "/tmp/cabin.stdout"])).send()
+                if body == "reboot":
+                    call(["sudo", "shutdown", "-r", "now"])
+                if body == "restart":
+                    call(["killall", "python"])
+                elif body == 'on':
+                    self.thermostat.setMode(Mode.On)
+                    msg.reply("[Sensor disconnected] Heat is ON.").send()
+                elif body == 'off':
+                    self.thermostat.setMode(Mode.Off)
+                    msg.reply("[Sensor disconnected] Heat is OFF.").send()
+                else:
+                    msg.reply("[Sensor disconnected] I don't know what '%s' means." % body).send()
+            else:
+                    msg.reply("Not sure I can trust you, %s." % msg['from'].user).send()
+
 
 class ThermoBot(sleekxmpp.ClientXMPP):
     def __init__(self, jid, password, thermostat):
@@ -55,7 +101,7 @@ class ThermoBot(sleekxmpp.ClientXMPP):
                         msg.reply("I know you're smarter than this").send()
                 elif body == 'on':
                     self.thermostat.setMode(Mode.On)
-                    msg.reply("Fireplace is ON.  Current temp is %.1f" % temp).send()
+                    msg.reply("Heat is ON.  Current temp is %.1f" % temp).send()
                 elif body == 'off':
                     self.thermostat.setMode(Mode.Off)
                     msg.reply("Heat is OFF.  Current temp is %.1f" % temp).send()
@@ -81,7 +127,7 @@ Mode = Enum('Mode', 'On Off Thermostat')
 
 class Thermostat():
     def __init__(self, temp, setTemp):
-        self._hysteresis = 0.5
+        self._hysteresis = 1.0
         self._stateLock = threading.Lock()
 
         # each of these need to be observable variables
@@ -173,6 +219,86 @@ class Thermostat():
             call(["gpio", "mode", "7", "in"])
             logging.info("Turning heat OFF")
             self.onHeating()
+
+class DebugGui(QWidget):
+    def __init__(self, message):
+        super(DebugGui, self).__init__()
+        self.message = message
+        self.initUI()
+
+    def initUI(self):
+        self.setStyleSheet("""
+QWidget {
+  background-color: transparent;
+  color: white;
+  margin: 0px;
+}
+""")
+        btnStyleSheet = """
+QPushButton {
+  background-color: black;
+  color: white;
+  border-style: outset;
+  border-color: grey;
+  border-width: 2px;
+  border-radius: 10px;
+  padding: 5px;
+  font: bold 14pt;
+}
+QPushButton:checked {
+  background-color: grey;
+  color: black;
+}
+"""
+
+        onBtn = QPushButton('On', self)
+        onBtn.setCheckable(True)
+        onBtn.setStyleSheet(btnStyleSheet)
+        offBtn = QPushButton('Off', self)
+        offBtn.setCheckable(True)
+        offBtn.setStyleSheet(btnStyleSheet)
+
+        modeGroup = QButtonGroup(self)
+        modeGroup.addButton(onBtn)
+        modeGroup.addButton(offBtn)
+
+        onBtn.clicked.connect(self.onClicked)
+        offBtn.clicked.connect(self.offClicked)
+
+        ip = check_output(["hostname", "-I"])
+        ipLabel = QLabel(ip, self)
+        ipLabel.setStyleSheet("border-width: 0; border-radius: 0; font: 12px")
+        ipLabel.move(0, 0)
+        ipLabel.setFixedWidth(320)
+
+        messageLabel = QLabel(self.message, self)
+        messageLabel.move(0, 10)
+        messageLabel.setFixedWidth(320)
+
+        layout = QGridLayout(self)
+        layout.setMargin(0)
+
+        layout.addWidget(onBtn, 2, 0, 1, 2)
+        layout.addWidget(offBtn, 2, 2, 1, 2)
+
+        self.setLayout(layout)
+
+        self.onBtn = onBtn
+        self.offBtn = offBtn
+
+        self.showFullScreen()
+
+    def onMode(self, mode):
+        if mode == Mode.On:
+            self.onBtn.setChecked(True)
+        elif mode == Mode.Off:
+            self.offBtn.setChecked(True)
+
+    def onClicked(self):
+        self.thermostat.setMode(Mode.On)
+
+    def offClicked(self):
+        self.thermostat.setMode(Mode.Off)
 
 class ThermostatGui(QWidget):
     def __init__(self, thermostat):
@@ -358,16 +484,13 @@ class TempPollerThread(threading.Thread):
             self._thermostat.setTemp(tF)
             time.sleep(1)
 
-def main():
+def start_thermostat(sensor, thermostat):
     logging.config.fileConfig('log.conf',disable_existing_loggers=0)
     logging.getLogger('Adafruit_I2C').setLevel(logging.WARN)
     logging.getLogger('Adafruit_BMP').setLevel(logging.WARN)
 
     # init the GPIO
     call(["gpio", "mode", "7", "in"])
-
-    sensor = BMP085.BMP085()
-    thermostat = Thermostat(72.0, 50.0)
 
     tPollerThread = TempPollerThread(sensor, thermostat)
     tPollerThread.start()
@@ -389,6 +512,31 @@ def main():
 
     sys.exit(app.exec_())
 
+def start_debug(thermostat):
+    chatbot = DebugBot(access_codes.jid, access_codes.password, thermostat)
+    chatbot.register_plugin('xep_0030') # Service Discovery
+    chatbot.register_plugin('xep_0004') # Data Forms
+    chatbot.register_plugin('xep_0060') # PubSub
+    chatbot.register_plugin('xep_0199', {'keepalive': True, 'interval': 60, 'timeout': 15}) # XMPP Ping
+    if chatbot.connect(('talk.google.com', 5222)):
+        logging.info("logged in to talk.google.com")
+        chatbot.process(block=False)
+    else:
+        logging.warning("login to talk.google.com failed")
+        sys.exit(0)
+
+    app = QApplication(sys.argv)
+    debugUi = DebugGui("Temp sensor disconnected")
+
+    sys.exit(app.exec_())
+
 if __name__ == '__main__':
-    main()
+    thermostat = Thermostat(72.0, 50.0)
+    try:
+        sensor = BMP085.BMP085()
+        start_thermostat(sensor, thermostat)
+    except:
+        # In case the sensor becomes disconnected
+        traceback.print_exc()
+        start_debug(thermostat)
 
