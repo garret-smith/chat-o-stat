@@ -23,7 +23,7 @@ class SqsBot(threading.Thread):
             for message in inbound_q.receive_messages():
                 logging.debug("processing message: %s", message)
                 try:
-                    self.process_message(message.Body)
+                    self.process_message(message.body)
                     message.delete()
                 except:
                     logging.error("message processing failed: %s", message, exc_info=True)

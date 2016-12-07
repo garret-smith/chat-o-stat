@@ -2,6 +2,7 @@
 import logging
 import threading
 
+from decimal import Decimal
 from datetime import datetime
 
 import boto3
@@ -41,9 +42,9 @@ class StatusWriter():
             status = {
                     'day': day,
                     'time': time,
-                    'mode': mode,
-                    'setTemp': setTemp,
-                    'temp': temp
+                    'mode': str(mode),
+                    'setTemp': Decimal(str(setTemp)),
+                    'temp': Decimal(str(temp))
                     }
             self.status_table.put_item(Item = status)
         except:
