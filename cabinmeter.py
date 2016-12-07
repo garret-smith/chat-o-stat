@@ -18,6 +18,9 @@ from Thermostat import Thermostat,Mode
 from ThermostatGui import ThermostatGui
 from ThermoBot import ThermoBot
 
+from SqsBot import SqsBot
+from StatusWriter import StatusWriter
+
 from DebugGui import DebugGui
 from DebugBot import DebugBot
 
@@ -64,6 +67,11 @@ def start_thermostat(sensor, thermostat):
     else:
         logging.warning("login to talk.google.com failed")
         sys.exit(0)
+
+    sqs_bot = SqsBot(thermostat)
+    sqs_bot.start()
+
+    status_writer = StatusWriter(thermostat)
 
     app = QApplication(sys.argv)
     theromstatUi = ThermostatGui(thermostat)

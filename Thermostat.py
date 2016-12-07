@@ -58,19 +58,31 @@ class Thermostat():
 
     def onMode(self):
         for n in self._toNotify:
-            n.onMode(self._mode)
+            try:
+                n.onMode(self._mode)
+            except:
+                logging.error("onMode %s failed", n, exc_info=True)
 
     def onSetTemp(self):
         for n in self._toNotify:
-            n.onSetTemp(self._setTemp)
+            try:
+                n.onSetTemp(self._setTemp)
+            except:
+                logging.error("onSetTemp %s failed", n, exc_info=True)
 
     def onTemp(self):
         for n in self._toNotify:
-            n.onTemp(self._temp)
+            try:
+                n.onTemp(self._temp)
+            except:
+                logging.error("onTemp %s failed", n, exc_info=True)
 
     def onHeating(self):
         for n in self._toNotify:
-            n.onHeating(self._heating)
+            try:
+                n.onHeating(self._heating)
+            except:
+                logging.error("onHeating %s failed", n, exc_info=True)
 
     def getMode(self):
         return self._mode
