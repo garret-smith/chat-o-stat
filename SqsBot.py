@@ -19,16 +19,17 @@ class SqsBot(threading.Thread):
         sqs = session.resource('sqs')
         inbound_q = sqs.get_queue_by_name(QueueName=config.in_q_name)
         while True:
-            logging.debug("polling message q")
-            for message in inbound_q.receive_messages():
-                logging.debug("processing message: %s", message)
-                try:
+            try:
+                logging.debug("polling message q")
+                for message in inbound_q.receive_messages():
+                    logging.debug("processing message: %s", message)
                     self.process_message(message.body)
                     message.delete()
-                except:
-                    logging.error("message processing failed: %s", message, exc_info=True)
+            except:
+                logging.exception("queue polling / processing failed")
+            finally:
+                time.sleep(config.q_poll_time)
 
-            time.sleep(config.q_poll_time)
 
     def process_message(self, body):
         msg = json.loads(body)
